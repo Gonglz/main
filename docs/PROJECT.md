@@ -1,6 +1,6 @@
 # Shared Engineering Loop
 
-Status: **Repository Agent Contract v1**  
+Status: **Repository Agent Contract v1.1**  
 Adopted: 2026-09-08
 
 ## Purpose
@@ -43,16 +43,29 @@ docs/
 └── audits/      # durable evidence only when worth preserving
 ```
 
-Do not create extra architecture/process documents until the repository actually needs them.
+Additional development/index/subsystem documents are optional and should exist only when the repository actually needs them.
 
-## Source-of-truth order
+## Authority model
 
-1. current code and active configuration
-2. repo `AGENTS.md`
-3. repo `docs/PROJECT.md`
-4. current ticket / task contract
-5. current tests and fresh runtime evidence
-6. historical audits / closeouts
+Do not collapse task intent and current implementation state into one source-of-truth list.
+
+### Task authority — what should change
+
+1. current explicit task / Ticket contract
+2. safety and workflow rules in the affected repo's `AGENTS.md`
+3. maintained project/subsystem documentation
+
+A Ticket defines the requested goal, scope, constraints, required evidence, and completion criteria. It is not proof of current implementation state.
+
+### Implementation authority — what currently exists
+
+1. current repository code and active configuration
+2. executable tests/contracts
+3. fresh runtime evidence
+4. maintained project documentation
+5. audits, closeouts, old plans, and chat history
+
+A historical green audit is not proof of current correctness. Old plans/specs must be reconciled against current code, tests, and runtime evidence before use.
 
 Project-specific rules stay in the project repository. This repository owns only the common convention.
 
@@ -60,7 +73,8 @@ Project-specific rules stay in the project repository. This repository owns only
 
 Before work:
 
-- read `AGENTS.md` and `docs/PROJECT.md`
+- read the affected repo's `AGENTS.md` and `docs/PROJECT.md` when present
+- read the current Ticket/task contract
 - inspect branch, HEAD, working tree, and relevant current implementation
 - verify runtime/production facts instead of guessing them
 
@@ -69,6 +83,8 @@ During work:
 - do not develop directly on `main`
 - keep one scoped task on one short-lived branch
 - make the smallest coherent change
+- add/update tests for behavior changes
+- use targeted tests while iterating and full required gates before closeout
 - keep production mutation separate from ordinary development unless explicitly authorized
 - never expose secrets in Git, logs, or artifacts
 
@@ -77,18 +93,23 @@ Before completion:
 - run required gates
 - review the diff
 - update durable docs only when facts changed
-- produce structured evidence for key executions
+- produce the required evidence available for that repository
 - commit, push, and update the PR
-
-A green historical audit is not proof of current correctness.
 
 ## Ticket workspace
 
-Temporary task material may live under:
+The canonical temporary task workspace is:
 
 `docs/_tmp/TICKET_xxx/`
 
-Typical files are `PROMPT.md`, `PLAN.md`, `CHECKPOINT.md`, and `FINDINGS.md`.
+Typical files are:
+
+```text
+PROMPT.md
+PLAN.md
+CHECKPOINT.md
+FINDINGS.md
+```
 
 At closeout:
 
@@ -96,11 +117,13 @@ At closeout:
 - remove obsolete prompts, duplicated analysis, and disposable notes
 - do not preserve temporary material merely because an agent produced it
 
+Do not use the legacy single-file pattern `docs/_tmp/TICKET_xxx_PROMPT.md` for new work.
+
 ## Runtime and evidence
 
 Raw runtime data does not belong in Git.
 
-Use:
+The shared structured-evidence interface is:
 
 `/var/tmp/<repo>/<run_id>/`
 
@@ -112,7 +135,7 @@ Example:
 
 `20260908T070500Z_8bcddae`
 
-A key execution should emit `result.json` with at least:
+A key execution that participates in the structured-evidence loop should emit:
 
 ```json
 {
@@ -126,9 +149,28 @@ A key execution should emit `result.json` with at least:
 }
 ```
 
-Consumers read `result.json` first and open raw logs only for diagnosis.
+Consumers should read `result.json` first and open raw logs only for diagnosis.
+
+### Implementation status rule
+
+This contract defines the interface; it does not imply every adopting repository already emits `result.json` or uploads artifacts.
+
+A repository may claim structured evidence is implemented only when its actual workflow/runner emits and publishes that evidence. Until then, GitHub Checks and logs are still valid evidence sources, but the task must not claim `result.json` or artifact publication occurred.
 
 Use GitHub Actions artifacts for retained runtime files. Commit only durable, human-useful audit conclusions to `docs/audits/`.
+
+### Retention
+
+`/var/tmp/<repo>/<run_id>/` is disposable runtime state.
+
+Default policy:
+
+- successful runs may be deleted after required structured evidence/artifacts are published
+- failed runs may be retained temporarily for diagnosis
+- host-side runtime directories should have a bounded TTL; **7 days** is the default
+- a project may override the TTL only when its own operational requirements document a reason
+
+Do not build a custom log-management service just for this contract; use the host's normal cleanup mechanism where possible.
 
 ## What belongs in Git
 
@@ -151,7 +193,7 @@ Do not keep by default:
 
 ## Completion contract
 
-A task is complete only when all required items are true:
+These shared top-level completion fields are fixed across repositories:
 
 ```text
 CODE_OR_DOCS_COMPLETE
@@ -163,7 +205,20 @@ COMMIT_PUSHED
 PR_UPDATED
 ```
 
-If a required item is not satisfied, report the task as incomplete or blocked rather than `PASS`.
+Project-specific checks belong under the repository's gates/evidence model, for example:
+
+```json
+{
+  "gates": {
+    "python_tests": "PASS",
+    "frontend_build": "PASS"
+  }
+}
+```
+
+Do not rename or add competing top-level completion fields for project-specific checks.
+
+If a required item is not satisfied, report the task as incomplete or blocked rather than `PASS`. If an item is not applicable, say so explicitly.
 
 ## Roles
 
@@ -175,13 +230,13 @@ Do not deploy a multi-agent bureaucracy by default. Keep logical boundaries inst
 
 The same ChatGPT/Codex system may perform these roles at different stages as long as the permission boundary is explicit.
 
-## Initial adopters
+## Adoption
 
-Repository Agent Contract v1 is already adopted by:
+Repositories known to use the Repository Agent Contract v1 family include:
 
 - `Gonglz/Quant-v2`
 - `Gonglz/obsidian_repo`
 - `Gonglz/pi-console`
 - `Gonglz/media-ingest`
 
-Future repositories should copy the convention, then add only the project-specific rules they actually need.
+Individual repositories may remain on v1 until explicitly updated. This `Gonglz/main` repository is the authority for the current shared contract version.
