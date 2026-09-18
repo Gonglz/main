@@ -1,6 +1,6 @@
 # Shared Engineering Loop
 
-Status: **Repository Agent Contract v1.2**  
+Status: **Repository Agent Contract v1.3**  
 Adopted: 2026-09-18
 
 ## Purpose
@@ -19,7 +19,9 @@ Local or self-hosted runner
   ├── result.json      # terminal evidence
   └── raw artifacts
   ↓
-GitHub state / local notification
+status/result + GitHub audit
+  ↓
+Windows desktop notification
   ↓
 Chat review only when needed
 ```
@@ -175,9 +177,15 @@ Notify only on useful state transitions by default:
 - `PASS`
 - `FAIL`
 
-GitHub comments/status are the durable human-visible channel. A local OS notification may be emitted in parallel for immediacy. Notification delivery does not replace `status.json` or `result.json`.
+The Windows desktop is the default attention sink. Windows and WSL runners show the notification directly. Pi, Jetson, and macOS runners send the same event to the Windows relay over Tailscale. GitHub Issue/PR comments are optional durable audit records; they are not the notification gate.
 
-A minimal reference implementation lives at `scripts/async_harness.py`. Invoke it from the target repo/worktree so Git metadata is captured correctly. Its interface is intentionally limited to `start`, `set`, `run`, and `status`; projects do not need to copy or extend it unless a real requirement appears.
+Notification delivery does not replace `status.json` or `result.json`. Failure to deliver a desktop notification must remain visible, but it does not rewrite a successful task result.
+
+The reference implementation is intentionally small:
+- `scripts/async_harness.py`: `start`, `set`, `run`, and `status`
+- `scripts/windows_notify_relay.py`: authenticated Tailscale-bound Windows relay
+
+Invoke the harness from the target repo/worktree so Git metadata is captured correctly. Non-Windows hosts read relay configuration from `~/.config/gonglz/async-harness.json` (or equivalent environment variables). Secrets stay outside Git.
 
 ### Implementation status rule
 
