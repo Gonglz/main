@@ -177,6 +177,8 @@ Notify only on useful state transitions by default:
 
 GitHub comments/status are the durable human-visible channel. A local OS notification may be emitted in parallel for immediacy. Notification delivery does not replace `status.json` or `result.json`.
 
+A minimal reference implementation lives at `scripts/async_harness.py`. Invoke it from the target repo/worktree so Git metadata is captured correctly. Its interface is intentionally limited to `start`, `set`, `run`, and `status`; projects do not need to copy or extend it unless a real requirement appears.
+
 ### Implementation status rule
 
 This contract defines the interface; it does not imply every adopting repository already emits `result.json` or uploads artifacts.
