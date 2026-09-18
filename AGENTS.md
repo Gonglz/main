@@ -1,6 +1,6 @@
 # Agent Instructions
 
-**Repository Agent Contract:** v1.2
+**Repository Agent Contract:** v1.3
 
 This repository is the shared engineering control plane for conventions used across Gonglz repositories.
 
@@ -63,7 +63,7 @@ At closeout, move only durable knowledge into maintained docs or `docs/audits/`;
 
 ## Structured evidence interface
 
-Repository Agent Contract v1.2 defines the structured execution/evidence interface, but a project must not claim it is implemented until its runner/workflow actually emits it.
+Repository Agent Contract v1.3 defines the structured execution/evidence interface, but a project must not claim it is implemented until its runner/workflow actually emits it.
 
 When structured evidence is implemented, runtime artifacts live outside Git under:
 
@@ -97,7 +97,7 @@ When execution reaches a terminal state, emit `result.json` with at least:
 
 For active runs, consumers read `status.json` first. For completed runs, `result.json` is the terminal evidence and raw logs are opened only when diagnosis requires them. Raw evidence may be uploaded as GitHub Actions artifacts; commit only durable audit conclusions.
 
-Notifications are an output channel, not the source of truth. A project may publish terminal or approval-required events to GitHub and/or a local OS notification channel, while the run state remains authoritative in `status.json` / `result.json`.
+Notifications are an output channel, not the source of truth. The default attention channel is the user's Windows desktop: Windows/WSL runners notify it directly; Pi/Jetson/macOS runners relay over the private Tailscale path. GitHub may retain the same transition as an audit record, but GitHub notification delivery is not required. Run state remains authoritative in `status.json` / `result.json`.
 
 Until a repository wires this interface into CI/runtime, GitHub Checks and logs remain valid evidence, but the repository must not report `result.json` or artifact publication as completed.
 
