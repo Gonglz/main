@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Small durable run-state + notification harness."""
+"""Small durable run-state + Windows notification harness."""
 
 from __future__ import annotations
 
@@ -10,10 +10,10 @@ import platform
 import shutil
 import socket
 import subprocess
-import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib import error, request
 
 STATES = {"PENDING", "RUNNING", "WAITING_APPROVAL", "BLOCKED", "PASS", "FAIL", "CANCELLED"}
 TERMINAL = {"BLOCKED", "PASS", "FAIL", "CANCELLED"}
@@ -56,42 +56,78 @@ def new_run_id() -> str:
     return f"{stamp}_{git('rev-parse', '--short', 'HEAD') or 'nogit'}"
 
 
-def local_notify(title: str, body: str) -> bool:
-    env = os.environ.copy()
-    env["HARNESS_NOTIFY_TITLE"] = title
-    env["HARNESS_NOTIFY_BODY"] = body
+def is_windows_host() -> bool:
+    return os.name == "nt" or "microsoft" in platform.release().lower()
 
-    if os.name == "nt" or "microsoft" in platform.release().lower():
-        exe = shutil.which("powershell.exe") or shutil.which("powershell")
-        if not exe:
-            return False
-        script = (
-            "Add-Type -AssemblyName System.Windows.Forms; "
-            "Add-Type -AssemblyName System.Drawing; "
-            "$n=New-Object System.Windows.Forms.NotifyIcon; "
-            "$n.Icon=[System.Drawing.SystemIcons]::Information; $n.Visible=$true; "
-            "$n.BalloonTipTitle=$env:HARNESS_NOTIFY_TITLE; "
-            "$n.BalloonTipText=$env:HARNESS_NOTIFY_BODY; "
-            "$n.ShowBalloonTip(5000); Start-Sleep 6; $n.Dispose()"
-        )
-        command = [exe, "-NoProfile", "-Command", script]
-    elif sys.platform == "darwin" and shutil.which("osascript"):
-        body = body.replace('"', '\\"')
-        title = title.replace('"', '\\"')
-        command = ["osascript", "-e", f'display notification "{body}" with title "{title}"']
-    elif shutil.which("notify-send"):
-        command = ["notify-send", title, body]
-    else:
+
+def windows_notify(title: str, body: str) -> bool:
+    exe = shutil.which("powershell.exe") or shutil.which("powershell")
+    if not exe:
         return False
-
+    env = os.environ.copy()
+    env["HARNESS_NOTIFY_TITLE"] = title[:120]
+    env["HARNESS_NOTIFY_BODY"] = body[:512]
+    script = (
+        "Add-Type -AssemblyName System.Windows.Forms; "
+        "Add-Type -AssemblyName System.Drawing; "
+        "$n=New-Object System.Windows.Forms.NotifyIcon; "
+        "$n.Icon=[System.Drawing.SystemIcons]::Information; $n.Visible=$true; "
+        "$n.BalloonTipTitle=$env:HARNESS_NOTIFY_TITLE; "
+        "$n.BalloonTipText=$env:HARNESS_NOTIFY_BODY; "
+        "$n.ShowBalloonTip(5000); Start-Sleep 6; $n.Dispose()"
+    )
     try:
-        subprocess.Popen(command, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen(
+            [exe, "-NoProfile", "-Command", script],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         return True
     except OSError:
         return False
 
 
-def github_notify(state: dict, body: str) -> bool:
+def relay_config() -> tuple[str, str]:
+    url = os.environ.get("HARNESS_NOTIFY_RELAY_URL", "")
+    token = os.environ.get("HARNESS_NOTIFY_TOKEN", "")
+    if url and token:
+        return url, token
+    path = Path.home() / ".config" / "gonglz" / "async-harness.json"
+    try:
+        config = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "", ""
+    return config.get("relay_url", ""), config.get("token", "")
+
+
+def relay_notify(title: str, body: str, state: dict) -> bool:
+    url, token = relay_config()
+    if not url or not token:
+        return False
+    payload = json.dumps({
+        "title": title[:120],
+        "message": body[:512],
+        "repo": state.get("repo", ""),
+        "task": state.get("task", ""),
+        "state": state.get("state", ""),
+        "run_id": state.get("run_id", ""),
+        "runner": state.get("runner", ""),
+    }).encode("utf-8")
+    req = request.Request(
+        url,
+        data=payload,
+        method="POST",
+        headers={"Content-Type": "application/json", "X-Gonglz-Notify-Token": token},
+    )
+    try:
+        with request.urlopen(req, timeout=5) as response:
+            return 200 <= response.status < 300
+    except (error.URLError, TimeoutError, OSError):
+        return False
+
+
+def github_record(state: dict, body: str) -> bool:
     repo, issue = state.get("repo"), state.get("github_issue")
     if not repo or not issue or not shutil.which("gh"):
         return False
@@ -110,6 +146,13 @@ def github_notify(state: dict, body: str) -> bool:
 def notify(state: dict) -> None:
     message = state.get("message") or state["state"]
     title = f"{state['task']}: {state['state']}"
+    if is_windows_host():
+        windows_ok = windows_notify(title, message)
+        route = "direct"
+    else:
+        windows_ok = relay_notify(title, message, state)
+        route = "relay"
+
     github_body = (
         f"### Async execution: {state['state']}\n\n"
         f"- Task: `{state['task']}`\n"
@@ -119,8 +162,9 @@ def notify(state: dict) -> None:
         f"- Runner: `{state.get('runner', '')}`"
     )
     print(json.dumps({
-        "local_notification": local_notify(title, message),
-        "github_notification": github_notify(state, github_body),
+        "windows_notification": windows_ok,
+        "notification_route": route,
+        "github_record": github_record(state, github_body),
     }))
 
 
@@ -208,10 +252,8 @@ def run_command(args: argparse.Namespace) -> int:
         "github_issue": args.github_issue,
     }
     persist(run_dir, state)
-
     with (run_dir / "run.log").open("w", encoding="utf-8", errors="replace") as log:
         result = subprocess.run(args.command, shell=True, stdout=log, stderr=subprocess.STDOUT)
-
     state["state"] = "PASS" if result.returncode == 0 else "FAIL"
     state["phase"] = "finished"
     state["message"] = f"Command exited with code {result.returncode}"
@@ -237,11 +279,9 @@ def common(parser: argparse.ArgumentParser) -> None:
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(description=__doc__)
     sub = root.add_subparsers(dest="command_name", required=True)
-
     p = sub.add_parser("start")
     common(p)
     p.set_defaults(func=start)
-
     p = sub.add_parser("set")
     p.add_argument("run_dir")
     p.add_argument("--state", required=True, choices=sorted(STATES))
@@ -251,12 +291,10 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--total", type=int)
     p.add_argument("--exit-code", type=int)
     p.set_defaults(func=set_state)
-
     p = sub.add_parser("run")
     common(p)
     p.add_argument("--command", required=True)
     p.set_defaults(func=run_command)
-
     p = sub.add_parser("status")
     p.add_argument("run_dir")
     p.set_defaults(func=show_status)
