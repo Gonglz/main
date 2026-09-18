@@ -160,11 +160,11 @@ def notify(state: dict) -> None:
     local_ok = local_notify(title, body)
     github_body = (
         f"### Async execution: {state['state']}\n\n"
-        f"- Task: \`{state['task']}\`\n"
-        f"- Run: \`{state['run_id']}\`\n"
-        f"- Phase: \`{state.get('phase', '')}\`\n"
+        f"- Task: `{state['task']}`\n"
+        f"- Run: `{state['run_id']}`\n"
+        f"- Phase: `{state.get('phase', '')}`\n"
         f"- Message: {body}\n"
-        f"- Runner: \`{state.get('runner', '')}\`"
+        f"- Runner: `{state.get('runner', '')}`"
     )
     github_ok = github_notify(state, github_body)
     print(json.dumps({"local_notification": local_ok, "github_notification": github_ok}))
