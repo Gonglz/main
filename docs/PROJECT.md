@@ -1,33 +1,30 @@
 # Shared Engineering Loop
 
-Status: **Repository Agent Contract v1.1**  
-Adopted: 2026-09-08
+Status: **Repository Agent Contract v1.2**  
+Adopted: 2026-09-18
 
 ## Purpose
 
 Standardize the development loop used across Gonglz repositories without creating a heavy orchestration layer.
 
 ```text
-ChatGPT / Codex
-      ↓
+Chat
+  ↓ intent / approval
 GitHub Ticket / Branch / PR
-      ↓
+  ↓
 Local or self-hosted runner
-      ↓
-Tests / integration / runtime verification
-      ↓
+  ↓
 /var/tmp/<repo>/<run_id>/
-      ├── result.json
-      └── raw artifacts
-      ↓
-GitHub Checks / Actions Artifact / durable audit
-      ↓
-ChatGPT review
-      ↓
-next iteration
+  ├── status.json      # mutable current state
+  ├── result.json      # terminal evidence
+  └── raw artifacts
+  ↓
+GitHub state / local notification
+  ↓
+Chat review only when needed
 ```
 
-GitHub is the control plane. Chat is an operating interface, not the project state database.
+GitHub is the control plane. Chat is an operating and decision interface, not the project state database and not the long-running executor.
 
 ## Repository minimum
 
@@ -135,7 +132,23 @@ Example:
 
 `20260908T070500Z_8bcddae`
 
-A key execution that participates in the structured-evidence loop should emit:
+While a run is active, it may maintain:
+
+```json
+{
+  "run_id": "...",
+  "state": "RUNNING",
+  "phase": "...",
+  "progress": {"completed": 47, "total": 120},
+  "updated_at": "...",
+  "needs_user": false,
+  "message": "..."
+}
+```
+
+A task that needs judgment changes to `WAITING_APPROVAL`; ordinary execution must not depend on the user sending "continue".
+
+When the run terminates, emit:
 
 ```json
 {
@@ -143,13 +156,26 @@ A key execution that participates in the structured-evidence loop should emit:
   "commit": "...",
   "branch": "...",
   "runner": "...",
-  "status": "PASS|FAIL",
+  "status": "PASS|FAIL|BLOCKED|CANCELLED",
   "gates": {},
   "failures": []
 }
 ```
 
-Consumers should read `result.json` first and open raw logs only for diagnosis.
+Read `status.json` for current progress and `result.json` for terminal evidence. Open raw logs only for diagnosis.
+
+### Async execution and notification
+
+Use a durable runner for work that can continue without judgment. Chat may start or inspect the run, but the run must survive the chat ending.
+
+Notify only on useful state transitions by default:
+
+- `WAITING_APPROVAL`
+- `BLOCKED`
+- `PASS`
+- `FAIL`
+
+GitHub comments/status are the durable human-visible channel. A local OS notification may be emitted in parallel for immediacy. Notification delivery does not replace `status.json` or `result.json`.
 
 ### Implementation status rule
 
@@ -239,4 +265,4 @@ Repositories known to use the Repository Agent Contract v1 family include:
 - `Gonglz/pi-console`
 - `Gonglz/media-ingest`
 
-Individual repositories may remain on v1 until explicitly updated. This `Gonglz/main` repository is the authority for the current shared contract version.
+Individual repositories adopt a newer contract explicitly; changes in this repository do not silently alter project-local rules. This `Gonglz/main` repository is the bootstrap authority for the current shared contract version.
