@@ -1,6 +1,6 @@
 # Agent Instructions
 
-**Repository Agent Contract:** v1.1
+**Repository Agent Contract:** v1.2
 
 This repository is the shared engineering control plane for conventions used across Gonglz repositories.
 
@@ -41,6 +41,16 @@ This repo owns only shared workflow and evidence conventions. Each project repo 
 - Never treat green CI as deployment authorization.
 - Never commit secrets or raw runtime logs.
 
+## Autonomous execution
+
+When a task has a defined goal, safe execution boundary, and verifiable completion criteria, repeated user prompts must not be required merely to continue.
+
+- Continue ordinary implementation and verification steps autonomously.
+- Put deterministic long-running work on a durable local/self-hosted runner rather than keeping Chat alive.
+- Pause only for user judgment, authorization, credentials, destructive action, unresolved policy/architecture decisions, or a genuine blocker.
+- Do not retry indefinitely; surface repeated or non-recoverable failures.
+- Use the structured execution state below so a new Chat can recover current progress without relying on chat history.
+
 ## Ticket workspace
 
 The canonical temporary task workspace is:
@@ -53,7 +63,7 @@ At closeout, move only durable knowledge into maintained docs or `docs/audits/`;
 
 ## Structured evidence interface
 
-Repository Agent Contract v1.1 defines the structured evidence interface, but a project must not claim it is implemented until its runner/workflow actually emits and publishes it.
+Repository Agent Contract v1.2 defines the structured execution/evidence interface, but a project must not claim it is implemented until its runner/workflow actually emits it.
 
 When structured evidence is implemented, runtime artifacts live outside Git under:
 
@@ -63,7 +73,19 @@ where:
 
 `run_id = <UTC timestamp>_<git short sha>`
 
-A key execution should emit `result.json` with at least:
+A running execution may maintain a mutable `status.json` with at least:
+
+- `run_id`
+- `state`: `PENDING|RUNNING|WAITING_APPROVAL|BLOCKED|PASS|FAIL|CANCELLED`
+- `phase`
+- `progress`
+- `updated_at`
+- `needs_user`
+- `message`
+
+`status.json` is current operational state, not durable evidence. Consumers should read it first when asked "where is it now?".
+
+When execution reaches a terminal state, emit `result.json` with at least:
 
 - `run_id`
 - `commit`
@@ -73,7 +95,9 @@ A key execution should emit `result.json` with at least:
 - `gates`
 - `failures`
 
-Consumers read `result.json` first and inspect raw logs only when diagnosis requires them. Raw evidence may be uploaded as GitHub Actions artifacts; commit only durable audit conclusions.
+For active runs, consumers read `status.json` first. For completed runs, `result.json` is the terminal evidence and raw logs are opened only when diagnosis requires them. Raw evidence may be uploaded as GitHub Actions artifacts; commit only durable audit conclusions.
+
+Notifications are an output channel, not the source of truth. A project may publish terminal or approval-required events to GitHub and/or a local OS notification channel, while the run state remains authoritative in `status.json` / `result.json`.
 
 Until a repository wires this interface into CI/runtime, GitHub Checks and logs remain valid evidence, but the repository must not report `result.json` or artifact publication as completed.
 
