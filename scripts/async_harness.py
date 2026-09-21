@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import platform
 import shutil
 import socket
 import subprocess
@@ -57,7 +56,14 @@ def new_run_id() -> str:
 
 
 def is_windows_host() -> bool:
-    return os.name == "nt" or "microsoft" in platform.release().lower()
+    """Return True only for a native Windows Python process.
+
+    WSL is a Linux runner even though its kernel release contains "microsoft".
+    WSL may have Windows executables on PATH while WSLInterop is disabled: in
+    that case attempting direct powershell.exe execution fails with ENOEXEC.
+    WSL therefore uses the authenticated relay like other non-Windows hosts.
+    """
+    return os.name == "nt"
 
 
 def windows_notify(title: str, body: str) -> bool:
@@ -88,17 +94,31 @@ def windows_notify(title: str, body: str) -> bool:
         return False
 
 
+def _read_token_file(value: str) -> str:
+    if not value:
+        return ""
+    try:
+        return Path(value).expanduser().read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
 def relay_config() -> tuple[str, str]:
     url = os.environ.get("HARNESS_NOTIFY_RELAY_URL", "")
     token = os.environ.get("HARNESS_NOTIFY_TOKEN", "")
-    if url and token:
-        return url, token
+    token_file = os.environ.get("HARNESS_NOTIFY_TOKEN_FILE", "")
+    if url and (token or token_file):
+        return url, token or _read_token_file(token_file)
+
     path = Path.home() / ".config" / "gonglz" / "async-harness.json"
     try:
         config = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return "", ""
-    return config.get("relay_url", ""), config.get("token", "")
+
+    configured_token = str(config.get("token", ""))
+    configured_token_file = str(config.get("token_file", ""))
+    return str(config.get("relay_url", "")), configured_token or _read_token_file(configured_token_file)
 
 
 def relay_notify(title: str, body: str, state: dict) -> bool:

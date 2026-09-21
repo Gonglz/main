@@ -97,7 +97,7 @@ When execution reaches a terminal state, emit `result.json` with at least:
 
 For active runs, consumers read `status.json` first. For completed runs, `result.json` is the terminal evidence and raw logs are opened only when diagnosis requires them. Raw evidence may be uploaded as GitHub Actions artifacts; commit only durable audit conclusions.
 
-Notifications are an output channel, not the source of truth. The default attention channel is the user's Windows desktop: Windows/WSL runners notify it directly; Pi/Jetson/macOS runners relay over the private Tailscale path. GitHub may retain the same transition as an audit record, but GitHub notification delivery is not required. Run state remains authoritative in `status.json` / `result.json`.
+Notifications are an output channel, not the source of truth. The default attention channel is the user's Windows desktop: native Windows runners notify it directly; WSL/Pi/Jetson/macOS runners relay over the private Tailscale path. GitHub may retain the same transition as an audit record, but GitHub notification delivery is not required. Run state remains authoritative in `status.json` / `result.json`.
 
 Until a repository wires this interface into CI/runtime, GitHub Checks and logs remain valid evidence, but the repository must not report `result.json` or artifact publication as completed.
 

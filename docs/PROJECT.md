@@ -177,7 +177,7 @@ Notify only on useful state transitions by default:
 - `PASS`
 - `FAIL`
 
-The Windows desktop is the default attention sink. Windows and WSL runners show the notification directly. Pi, Jetson, and macOS runners send the same event to the Windows relay over Tailscale. GitHub Issue/PR comments are optional durable audit records; they are not the notification gate.
+The Windows desktop is the default attention sink. Native Windows runners show the notification directly. WSL, Pi, Jetson, and macOS runners send the same event to the Windows relay over the private Tailscale path. GitHub Issue/PR comments are optional durable audit records; they are not the notification gate.
 
 Notification delivery does not replace `status.json` or `result.json`. Failure to deliver a desktop notification must remain visible, but it does not rewrite a successful task result.
 
@@ -185,7 +185,7 @@ The reference implementation is intentionally small:
 - `scripts/async_harness.py`: `start`, `set`, `run`, and `status`
 - `scripts/windows_notify_relay.py`: authenticated Tailscale-bound Windows relay
 
-Invoke the harness from the target repo/worktree so Git metadata is captured correctly. Non-Windows hosts read relay configuration from `~/.config/gonglz/async-harness.json` (or equivalent environment variables). Secrets stay outside Git.
+Invoke the harness from the target repo/worktree so Git metadata is captured correctly. Native Windows runners notify directly. WSL is treated as a non-Windows runner and uses the authenticated relay; this remains correct even when Windows executables appear on WSL `PATH` but WSLInterop is disabled. Non-Windows hosts read relay configuration from `~/.config/gonglz/async-harness.json` (or equivalent environment variables). The config may use either `token` or `token_file`; prefer `token_file` when the Windows relay token is already available through a mounted private path. Secrets stay outside Git.
 
 ### Implementation status rule
 
