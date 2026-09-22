@@ -1,0 +1,60 @@
+name: Rescue Windows Remote Commander
+
+on:
+  push:
+    branches:
+      - rescue/windows-remote-commander
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 10
+    steps:
+      - name: Verify runner
+        shell: powershell
+        run: |
+          Write-Host "computer=$env:COMPUTERNAME user=$env:USERNAME profile=$env:USERPROFILE"
+          if ($env:USERNAME -ne "Gongl") { throw "Expected Gongl runner user" }
+
+      - name: Repair Remote Commander
+        shell: powershell
+        run: |
+          $matches = Get-CimInstance Win32_Process | Where-Object {
+            $_.Name -match 'node|npm|npx' -and
+            $_.CommandLine -match 'desktop-commander|wonderwhy-er'
+          }
+          $matches | Select-Object ProcessId,Name,CommandLine | Format-List
+          foreach ($p in $matches) {
+            Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
+          }
+          Start-Sleep 2
+
+          $old = Join-Path $env:LOCALAPPDATA 'npm-cache\_npx\4b4c857f6efdfb61'
+          if (Test-Path $old) { Remove-Item -Recurse -Force $old }
+
+          $cache = Join-Path $env:TEMP 'desktop-commander-rescue-cache'
+          $logs = Join-Path $env:USERPROFILE 'desktop-commander-rescue'
+          New-Item -ItemType Directory -Force -Path $cache,$logs | Out-Null
+          $out = Join-Path $logs 'remote.out.log'
+          $err = Join-Path $logs 'remote.err.log'
+          Remove-Item $out,$err -Force -ErrorAction SilentlyContinue
+
+          $env:RUNNER_TRACKING_ID = ''
+          $args = @(
+            '-NoProfile','-ExecutionPolicy','Bypass','-Command',
+            "& npx.cmd --yes --cache '$cache' @wonderwhy-er/desktop-commander@latest remote --debug"
+          )
+          Start-Process powershell.exe -WindowStyle Hidden -ArgumentList $args `
+            -RedirectStandardOutput $out -RedirectStandardError $err
+
+          Start-Sleep 20
+          $running = Get-CimInstance Win32_Process | Where-Object {
+            $_.CommandLine -match 'desktop-commander|wonderwhy-er'
+          }
+          $running | Select-Object ProcessId,Name,CommandLine | Format-List
+          if (Test-Path $out) { Get-Content $out -Tail 80 }
+          if (Test-Path $err) { Get-Content $err -Tail 80 }
+          if (-not $running) { throw "Remote Commander did not remain running" }
